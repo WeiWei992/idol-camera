@@ -18,3 +18,5 @@ A web application that allows you to take photos with your favorite idol!
 ## Deployment
 To use this on a mobile device, this site must be served over HTTPS.
 GitHub Pages is a great free option.
+
+#Not yet complete will have some adjustment in future.
