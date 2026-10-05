@@ -3,10 +3,14 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="description" content="Take photos with your favorite idol, right in your browser.">
+    <meta name="theme-color" content="#0f0f13">
     <title>Idol Cam</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
@@ -17,35 +21,44 @@
 
         <main class="camera-stage">
             <div class="viewport" id="viewport">
-                <video id="camera-feed" autoplay playsinline muted></video>
-                <img id="idol-overlay" src="" alt="Idol Overlay" crossorigin="anonymous">
+                <video id="camera-feed" class="mirrored" autoplay playsinline muted></video>
+                <img id="idol-overlay" alt="Idol overlay — drag to move, pinch or scroll to resize" draggable="false" hidden>
+
+                <p id="hint" class="hint">Tap the upload button to add your idol</p>
+
+                <div id="status" class="status" role="status" aria-live="polite" hidden>
+                    <p id="status-text"></p>
+                    <button id="retry-btn" class="pill-btn" type="button" hidden>Retry</button>
+                </div>
             </div>
-            <canvas id="capture-canvas" style="display: none;"></canvas>
+            <canvas id="capture-canvas" hidden></canvas>
         </main>
 
         <footer class="controls">
             <div class="control-group">
-                <label for="idol-upload" class="btn secondary-btn">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <label for="idol-upload" class="btn secondary-btn" title="Upload idol image">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                         <polyline points="17 8 12 3 7 8" />
                         <line x1="12" y1="3" x2="12" y2="15" />
                     </svg>
+                    <span class="visually-hidden">Upload idol image</span>
                 </label>
-                <input type="file" id="idol-upload" accept="image/*" hidden>
+                <input type="file" id="idol-upload" accept="image/*" class="visually-hidden">
             </div>
 
             <div class="control-group slider-group">
-                <input type="range" id="size-slider" min="10" max="200" value="80" class="size-slider">
+                <input type="range" id="size-slider" min="10" max="200" value="80" class="size-slider"
+                    aria-label="Idol size" disabled>
             </div>
 
-            <button id="capture-btn" class="capture-btn">
-                <div class="inner-circle"></div>
+            <button id="capture-btn" class="capture-btn" type="button" aria-label="Take photo" title="Take photo (Space)">
+                <span class="inner-circle"></span>
             </button>
 
             <div class="control-group">
-                <button id="switch-cam-btn" class="btn secondary-btn">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <button id="switch-cam-btn" class="btn secondary-btn" type="button" aria-label="Switch camera" title="Switch camera">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                         <path d="M23 4v6h-6" />
                         <path d="M1 20v-6h6" />
                         <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
@@ -53,6 +66,17 @@
                 </button>
             </div>
         </footer>
+
+        <div id="flash" class="flash" aria-hidden="true"></div>
+
+        <div id="preview" class="preview" role="dialog" aria-modal="true" aria-label="Photo preview" hidden>
+            <img id="preview-img" alt="Captured photo">
+            <div class="preview-actions">
+                <button id="retake-btn" class="pill-btn" type="button">Retake</button>
+                <button id="share-btn" class="pill-btn" type="button" hidden>Share</button>
+                <button id="save-btn" class="pill-btn primary" type="button">Save</button>
+            </div>
+        </div>
     </div>
     <script src="script.js"></script>
 </body>

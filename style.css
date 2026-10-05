@@ -12,11 +12,25 @@
     padding: 0;
 }
 
+[hidden] {
+    display: none !important;
+}
+
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+
 body {
     font-family: 'Outfit', sans-serif;
     background-color: var(--bg-color);
     color: var(--text-color);
     height: 100vh;
+    height: 100dvh;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -34,7 +48,9 @@ body {
 
 header {
     padding: 1rem;
+    padding-top: max(1rem, env(safe-area-inset-top));
     text-align: center;
+    pointer-events: none;
     background: linear-gradient(to bottom, rgba(15, 15, 19, 0.9), transparent);
     position: absolute;
     top: 0;
@@ -70,33 +86,76 @@ header h1 {
     display: flex;
     justify-content: center;
     align-items: center;
+    overflow: hidden;
+    touch-action: none;
+    /* Drag and pinch are handled in JS */
 }
 
 video {
     width: 100%;
     height: 100%;
     object-fit: cover;
+}
+
+/* Mirror only the front camera, like a selfie */
+video.mirrored {
     transform: scaleX(-1);
-    /* Mirror effect */
 }
 
 #idol-overlay {
     position: absolute;
     /* Initial position will be set by JS or default to bottom-right */
+    max-width: none;
     cursor: grab;
     user-select: none;
-    touch-action: none;
-    /* Prevent scrolling while dragging */
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
     filter: drop-shadow(0 0 10px rgba(0, 0, 0, 0.5));
-    transform-origin: center center;
 }
 
-#idol-overlay:active {
+#idol-overlay.dragging {
     cursor: grabbing;
+}
+
+.hint {
+    position: absolute;
+    top: 40%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 0.6rem 1rem;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(10px);
+    color: var(--text-color);
+    font-size: 0.9rem;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.status {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 2rem;
+    text-align: center;
+    background: rgba(15, 15, 19, 0.85);
+    color: var(--text-color);
+    z-index: 5;
+}
+
+.status p {
+    max-width: 28ch;
+    line-height: 1.5;
+    color: var(--secondary-text);
 }
 
 .controls {
     padding: 2rem 1rem;
+    padding-bottom: max(2rem, env(safe-area-inset-bottom));
     background: linear-gradient(to top, rgba(15, 15, 19, 1), transparent);
     display: flex;
     justify-content: space-around;
@@ -123,6 +182,14 @@ video {
     transition: transform 0.2s, background 0.2s;
 }
 
+.btn:focus-visible,
+.capture-btn:focus-visible,
+.pill-btn:focus-visible,
+.control-group:focus-within label {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 3px;
+}
+
 .btn:active {
     transform: scale(0.95);
     background: rgba(255, 255, 255, 0.2);
@@ -144,6 +211,7 @@ video {
 }
 
 .inner-circle {
+    display: block;
     width: 100%;
     height: 100%;
     background-color: white;
@@ -170,6 +238,10 @@ video {
     outline: none;
 }
 
+.size-slider:disabled {
+    opacity: 0.4;
+}
+
 .size-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
@@ -188,6 +260,80 @@ video {
     background: var(--primary-color);
     cursor: pointer;
     border: 2px solid white;
+}
+
+/* Camera flash */
+.flash {
+    position: fixed;
+    inset: 0;
+    background: white;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 100;
+}
+
+.flash.active {
+    animation: flash 0.5s ease-out;
+}
+
+@keyframes flash {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+
+/* Captured photo preview */
+.preview {
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    padding-top: max(1.5rem, env(safe-area-inset-top));
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+    background: var(--bg-color);
+}
+
+.preview img {
+    max-width: 100%;
+    min-height: 0;
+    flex: 1;
+    object-fit: contain;
+    border-radius: 12px;
+}
+
+.preview-actions {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.pill-btn {
+    font: inherit;
+    font-weight: 500;
+    padding: 0.7rem 1.4rem;
+    border: none;
+    border-radius: 999px;
+    background: var(--surface-color);
+    color: var(--text-color);
+    cursor: pointer;
+    transition: transform 0.2s, background 0.2s;
+}
+
+.pill-btn:active {
+    transform: scale(0.95);
+}
+
+.pill-btn.primary {
+    background: var(--primary-color);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .flash.active {
+        animation-duration: 0.15s;
+    }
 }
 
 /* Responsive adjustments */
