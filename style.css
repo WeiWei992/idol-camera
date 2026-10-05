@@ -117,6 +117,68 @@ video.mirrored {
     cursor: grabbing;
 }
 
+.side-tools {
+    position: absolute;
+    top: max(4.5rem, calc(env(safe-area-inset-top) + 3.5rem));
+    right: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    z-index: 6;
+}
+
+.tool-btn {
+    flex-direction: column;
+    gap: 1px;
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    background: rgba(0, 0, 0, 0.4);
+}
+
+.tool-btn.active,
+.tool-btn[aria-pressed="true"] {
+    color: var(--primary-color);
+}
+
+.tool-label {
+    font-family: inherit;
+    font-size: 0.65rem;
+    font-weight: 500;
+    line-height: 1;
+}
+
+.countdown {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 8rem;
+    font-weight: 700;
+    color: white;
+    text-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+    pointer-events: none;
+    z-index: 7;
+}
+
+.countdown.tick {
+    animation: tick 1s ease-out;
+}
+
+@keyframes tick {
+    from { transform: scale(1.4); opacity: 0; }
+    20% { transform: scale(1); opacity: 1; }
+    to { transform: scale(0.9); opacity: 0.6; }
+}
+
+/* While the self-timer runs, the shutter becomes a stop button */
+.capture-btn.counting .inner-circle {
+    background-color: var(--primary-color);
+    border-radius: 8px;
+    transform: scale(0.55);
+}
+
 .hint {
     position: absolute;
     top: 40%;
@@ -216,7 +278,7 @@ video.mirrored {
     height: 100%;
     background-color: white;
     border-radius: 50%;
-    transition: background-color 0.2s;
+    transition: background-color 0.2s, border-radius 0.2s, transform 0.2s;
 }
 
 .capture-btn:active .inner-circle {
@@ -333,6 +395,10 @@ video.mirrored {
 @media (prefers-reduced-motion: reduce) {
     .flash.active {
         animation-duration: 0.15s;
+    }
+
+    .countdown.tick {
+        animation: none;
     }
 }
 

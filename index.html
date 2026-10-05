@@ -6,6 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="description" content="Take photos with your favorite idol, right in your browser.">
     <meta name="theme-color" content="#0f0f13">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Idol Cam">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" href="icons/icon-192.png" type="image/png">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
     <title>Idol Cam</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,9 +29,30 @@
         <main class="camera-stage">
             <div class="viewport" id="viewport">
                 <video id="camera-feed" class="mirrored" autoplay playsinline muted></video>
-                <img id="idol-overlay" alt="Idol overlay — drag to move, pinch or scroll to resize" draggable="false" hidden>
+                <img id="idol-overlay" alt="Idol overlay — drag to move, pinch to resize and rotate" draggable="false" hidden>
 
                 <p id="hint" class="hint">Tap the upload button to add your idol</p>
+
+                <div class="side-tools">
+                    <button id="timer-btn" class="btn tool-btn" type="button" aria-label="Self-timer: off" title="Self-timer">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <circle cx="12" cy="13" r="8" />
+                            <path d="M12 9v4l2 2" />
+                            <path d="M9 2h6" />
+                        </svg>
+                        <span id="timer-label" class="tool-label">Off</span>
+                    </button>
+                    <button id="flip-btn" class="btn tool-btn" type="button" aria-label="Flip idol" aria-pressed="false" title="Flip idol" hidden>
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <path d="M12 3v18" stroke-dasharray="2 2" />
+                            <path d="M9 7 4 17h5z" />
+                            <path d="M15 7l5 10h-5z" />
+                        </svg>
+                        <span class="tool-label">Flip</span>
+                    </button>
+                </div>
+
+                <div id="countdown" class="countdown" aria-live="assertive" hidden></div>
 
                 <div id="status" class="status" role="status" aria-live="polite" hidden>
                     <p id="status-text"></p>

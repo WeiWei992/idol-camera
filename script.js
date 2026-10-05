@@ -17,9 +17,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveBtn = document.getElementById('save-btn');
     const shareBtn = document.getElementById('share-btn');
     const retakeBtn = document.getElementById('retake-btn');
+    const flipBtn = document.getElementById('flip-btn');
+    const timerBtn = document.getElementById('timer-btn');
+    const timerLabel = document.getElementById('timer-label');
+    const countdownEl = document.getElementById('countdown');
 
     const MIN_SCALE = sizeSlider.min / 100;
     const MAX_SCALE = sizeSlider.max / 100;
+    const TIMER_OPTIONS = [0, 3, 10];
+    // Rotation snaps back to upright when within this many radians
+    const SNAP_ANGLE = 5 * Math.PI / 180;
+    const DOUBLE_TAP_MS = 300;
 
     let currentStream = null;
     let facingMode = 'user';
@@ -32,12 +40,15 @@ document.addEventListener('DOMContentLoaded', () => {
         cx: 0.5,    // center X as a fraction of viewport width
         cy: 0.5,    // center Y as a fraction of viewport height
         scale: sizeSlider.value / 100, // height as a fraction of viewport height
-        aspect: 1   // natural width / height of the idol image
+        aspect: 1,  // natural width / height of the idol image
+        rotation: 0, // radians, clockwise
+        flipped: false
     };
 
     // Active pointers on the overlay, used for drag and pinch-to-resize
     const pointers = new Map();
     let gesture = null;
+    let lastTapTime = -Infinity;
 
     // ---------- Camera ----------
 
@@ -121,6 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Release the camera while the page is in the background
     document.addEventListener('visibilitychange', () => {
         if (document.hidden) {
+            cancelCountdown();
             stopCamera();
         } else if (preview.hidden) {
             initCamera();
@@ -153,6 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
         idolOverlay.style.top = `${rect.top}px`;
         idolOverlay.style.width = `${rect.width}px`;
         idolOverlay.style.height = `${rect.height}px`;
+        idolOverlay.style.transform = `rotate(${overlay.rotation}rad) scaleX(${overlay.flipped ? -1 : 1})`;
     }
 
     function setScale(scale) {
@@ -181,8 +194,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const width = overlay.scale * vh * overlay.aspect;
         overlay.cx = clamp(1 - width / 2 / vw, 0, 1);
         overlay.cy = clamp(1 - overlay.scale / 2, 0, 1);
+        overlay.rotation = 0;
+        overlay.flipped = false;
+        flipBtn.setAttribute('aria-pressed', 'false');
 
         idolOverlay.hidden = false;
+        flipBtn.hidden = false;
         hint.hidden = true;
         sizeSlider.disabled = false;
         renderOverlay();
@@ -197,13 +214,31 @@ document.addEventListener('DOMContentLoaded', () => {
         setScale(sizeSlider.value / 100);
     });
 
-    // Drag with one pointer, pinch with two
+    flipBtn.addEventListener('click', () => {
+        overlay.flipped = !overlay.flipped;
+        flipBtn.setAttribute('aria-pressed', String(overlay.flipped));
+        renderOverlay();
+    });
+
+    function setRotation(angle) {
+        // Normalise to (-PI, PI] and snap to upright
+        angle = Math.atan2(Math.sin(angle), Math.cos(angle));
+        overlay.rotation = Math.abs(angle) < SNAP_ANGLE ? 0 : angle;
+    }
+
+    function pinchAngle(pts) {
+        return Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
+    }
+
+    // Drag with one pointer; pinch to resize and twist to rotate with two
     function startGesture() {
         const pts = [...pointers.values()];
         gesture = {
             cx: overlay.cx,
             cy: overlay.cy,
             scale: overlay.scale,
+            rotation: overlay.rotation,
+            startAngle: pts.length > 1 ? pinchAngle(pts) : 0,
             startX: pts.reduce((s, p) => s + p.x, 0) / pts.length,
             startY: pts.reduce((s, p) => s + p.y, 0) / pts.length,
             startDist: pts.length > 1 ? Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) : 0
@@ -214,6 +249,16 @@ document.addEventListener('DOMContentLoaded', () => {
     viewport.addEventListener('pointerdown', (e) => {
         if (pointers.size === 0 && e.target !== idolOverlay) return;
         e.preventDefault();
+
+        // Double-tap / double-click the idol to make it upright again
+        if (pointers.size === 0) {
+            if (e.timeStamp - lastTapTime < DOUBLE_TAP_MS) {
+                overlay.rotation = 0;
+                renderOverlay();
+            }
+            lastTapTime = e.timeStamp;
+        }
+
         viewport.setPointerCapture(e.pointerId);
         pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         idolOverlay.classList.add('dragging');
@@ -233,6 +278,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (pts.length > 1 && gesture.startDist > 0) {
             const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+            setRotation(gesture.rotation + pinchAngle(pts) - gesture.startAngle);
             setScale(gesture.scale * dist / gesture.startDist);
         } else {
             renderOverlay();
@@ -252,11 +298,21 @@ document.addEventListener('DOMContentLoaded', () => {
     viewport.addEventListener('pointerup', endPointer);
     viewport.addEventListener('pointercancel', endPointer);
 
-    // Mouse wheel / trackpad resize on desktop
+    // Desktop: wheel resizes, Shift + wheel rotates
     idolOverlay.addEventListener('wheel', (e) => {
         e.preventDefault();
-        setScale(overlay.scale * Math.exp(-e.deltaY * 0.001));
+        if (e.shiftKey) {
+            // Some browsers report Shift + wheel as horizontal scrolling
+            const delta = e.deltaY || e.deltaX;
+            // Step past the snap zone so rotation can leave upright
+            const step = Math.sign(delta) * Math.max(SNAP_ANGLE * 1.2, Math.abs(delta) * 0.002);
+            setRotation(overlay.rotation + step);
+            renderOverlay();
+        } else {
+            setScale(overlay.scale * Math.exp(-e.deltaY * 0.001));
+        }
     }, { passive: false });
+
 
     window.addEventListener('resize', () => {
         if (!idolOverlay.hidden) renderOverlay();
@@ -298,7 +354,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!idolOverlay.hidden && idolOverlay.naturalWidth > 0) {
             const rect = overlayRect();
             ctx.filter = `drop-shadow(0 0 ${10 * k}px rgba(0, 0, 0, 0.5))`;
-            ctx.drawImage(idolOverlay, rect.left * k, rect.top * k, rect.width * k, rect.height * k);
+            ctx.translate((rect.left + rect.width / 2) * k, (rect.top + rect.height / 2) * k);
+            ctx.rotate(overlay.rotation);
+            ctx.scale(overlay.flipped ? -1 : 1, 1);
+            ctx.drawImage(idolOverlay, -rect.width * k / 2, -rect.height * k / 2, rect.width * k, rect.height * k);
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.filter = 'none';
         }
 
@@ -330,7 +390,77 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    captureBtn.addEventListener('click', capture);
+    // ---------- Self-timer ----------
+
+    let timerSeconds = 0;
+    let countdown = null; // { interval, remaining }
+
+    function loadTimerSetting() {
+        try {
+            const saved = Number(localStorage.getItem('idolCam.timer'));
+            if (TIMER_OPTIONS.includes(saved)) timerSeconds = saved;
+        } catch { /* storage unavailable */ }
+        updateTimerButton();
+    }
+
+    function updateTimerButton() {
+        timerLabel.textContent = timerSeconds ? `${timerSeconds}s` : 'Off';
+        timerBtn.classList.toggle('active', timerSeconds > 0);
+        timerBtn.setAttribute('aria-label', `Self-timer: ${timerSeconds ? timerSeconds + ' seconds' : 'off'}`);
+    }
+
+    timerBtn.addEventListener('click', () => {
+        timerSeconds = TIMER_OPTIONS[(TIMER_OPTIONS.indexOf(timerSeconds) + 1) % TIMER_OPTIONS.length];
+        try { localStorage.setItem('idolCam.timer', String(timerSeconds)); } catch { /* ignore */ }
+        updateTimerButton();
+    });
+
+    function cancelCountdown() {
+        if (!countdown) return;
+        clearInterval(countdown.interval);
+        countdown = null;
+        countdownEl.hidden = true;
+        captureBtn.classList.remove('counting');
+        captureBtn.setAttribute('aria-label', 'Take photo');
+    }
+
+    function showCountdownNumber(n) {
+        countdownEl.textContent = n;
+        // Restart the pop animation for each number
+        countdownEl.classList.remove('tick');
+        void countdownEl.offsetWidth;
+        countdownEl.classList.add('tick');
+    }
+
+    function startCapture() {
+        if (countdown) {
+            cancelCountdown();
+            return;
+        }
+        if (!timerSeconds) {
+            capture();
+            return;
+        }
+        if (!currentStream) return;
+
+        countdown = { remaining: timerSeconds };
+        countdownEl.hidden = false;
+        captureBtn.classList.add('counting');
+        captureBtn.setAttribute('aria-label', 'Cancel timer');
+        showCountdownNumber(countdown.remaining);
+
+        countdown.interval = setInterval(() => {
+            countdown.remaining -= 1;
+            if (countdown.remaining > 0) {
+                showCountdownNumber(countdown.remaining);
+            } else {
+                cancelCountdown();
+                capture();
+            }
+        }, 1000);
+    }
+
+    captureBtn.addEventListener('click', startCapture);
 
     document.addEventListener('keydown', (e) => {
         if (!preview.hidden) {
@@ -339,7 +469,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (e.key === ' ' && e.target === document.body) {
             e.preventDefault();
-            capture();
+            startCapture();
         }
     });
 
@@ -370,6 +500,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     retakeBtn.addEventListener('click', closePreview);
 
+    // ---------- Install as app ----------
+
+    if ('serviceWorker' in navigator && window.isSecureContext) {
+        navigator.serviceWorker.register('sw.js').catch(err => {
+            console.warn('Service worker registration failed:', err);
+        });
+    }
+
     // Start
+    loadTimerSetting();
     initCamera();
 });
