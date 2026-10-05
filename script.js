@@ -7,222 +7,368 @@ document.addEventListener('DOMContentLoaded', () => {
     const switchCamBtn = document.getElementById('switch-cam-btn');
     const sizeSlider = document.getElementById('size-slider');
     const viewport = document.getElementById('viewport');
+    const statusBox = document.getElementById('status');
+    const statusText = document.getElementById('status-text');
+    const retryBtn = document.getElementById('retry-btn');
+    const hint = document.getElementById('hint');
+    const flash = document.getElementById('flash');
+    const preview = document.getElementById('preview');
+    const previewImg = document.getElementById('preview-img');
+    const saveBtn = document.getElementById('save-btn');
+    const shareBtn = document.getElementById('share-btn');
+    const retakeBtn = document.getElementById('retake-btn');
+
+    const MIN_SCALE = sizeSlider.min / 100;
+    const MAX_SCALE = sizeSlider.max / 100;
 
     let currentStream = null;
     let facingMode = 'user';
+    let idolObjectUrl = null;
+    let lastCapture = null; // { blob, url, filename }
 
-    // State for drag and resize
-    let state = {
-        x: 0,
-        y: 0,
-        scale: 0.8, // 80% of viewport height initially
-        isDragging: false,
-        dragStartX: 0,
-        dragStartY: 0,
-        initialLeft: 0,
-        initialTop: 0
+    // Overlay geometry is stored relative to the viewport so it survives
+    // resizes and orientation changes.
+    const overlay = {
+        cx: 0.5,    // center X as a fraction of viewport width
+        cy: 0.5,    // center Y as a fraction of viewport height
+        scale: sizeSlider.value / 100, // height as a fraction of viewport height
+        aspect: 1   // natural width / height of the idol image
     };
 
-    // Initialize Camera
-    async function initCamera() {
+    // Active pointers on the overlay, used for drag and pinch-to-resize
+    const pointers = new Map();
+    let gesture = null;
+
+    // ---------- Camera ----------
+
+    function showStatus(message, canRetry = false) {
+        statusText.textContent = message;
+        retryBtn.hidden = !canRetry;
+        statusBox.hidden = false;
+    }
+
+    function hideStatus() {
+        statusBox.hidden = true;
+    }
+
+    function stopCamera() {
         if (currentStream) {
             currentStream.getTracks().forEach(track => track.stop());
+            currentStream = null;
+        }
+    }
+
+    async function initCamera() {
+        stopCamera();
+
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            showStatus('Camera is not available. Open this page over HTTPS (or localhost) in a modern browser.');
+            return;
         }
 
+        showStatus('Starting camera…');
+
         try {
-            const constraints = {
+            const stream = await navigator.mediaDevices.getUserMedia({
                 video: {
                     facingMode: facingMode,
                     width: { ideal: 1920 },
                     height: { ideal: 1080 }
                 },
                 audio: false
-            };
-
-            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            });
             currentStream = stream;
             video.srcObject = stream;
+
+            // Prefer what the browser actually gave us over what we asked for
+            const settings = stream.getVideoTracks()[0].getSettings();
+            const actualFacing = settings.facingMode || facingMode;
+            video.classList.toggle('mirrored', actualFacing === 'user');
+
+            hideStatus();
+            updateSwitchButton();
         } catch (err) {
-            console.error("Error accessing camera:", err);
-            alert("Could not access camera. Please allow camera permissions.");
+            console.error('Error accessing camera:', err);
+            if (err.name === 'NotAllowedError') {
+                showStatus('Camera permission was denied. Allow camera access in your browser settings, then retry.', true);
+            } else if (err.name === 'NotFoundError' || err.name === 'OverconstrainedError') {
+                showStatus('No camera was found on this device.', true);
+            } else if (err.name === 'NotReadableError') {
+                showStatus('The camera is being used by another app.', true);
+            } else {
+                showStatus('Could not access the camera.', true);
+            }
         }
     }
 
-    // Initialize Overlay Position
-    function initOverlay() {
-        // Default to bottom right
-        const viewportRect = viewport.getBoundingClientRect();
-        const imgHeight = viewportRect.height * state.scale;
-
-        // We need to wait for image to load to get aspect ratio, 
-        // but for initial placement we can just set style
-        idolOverlay.style.height = `${state.scale * 100}%`;
-        idolOverlay.style.width = 'auto';
-
-        // Reset position to bottom right
-        idolOverlay.style.left = 'auto';
-        idolOverlay.style.top = 'auto';
-        idolOverlay.style.right = '0px';
-        idolOverlay.style.bottom = '0px';
-
-        // Update state coordinates after browser renders
-        requestAnimationFrame(() => {
-            const rect = idolOverlay.getBoundingClientRect();
-            const parentRect = viewport.getBoundingClientRect();
-            state.x = rect.left - parentRect.left;
-            state.y = rect.top - parentRect.top;
-
-            // Now switch to absolute positioning with left/top for dragging
-            idolOverlay.style.right = 'auto';
-            idolOverlay.style.bottom = 'auto';
-            idolOverlay.style.left = `${state.x}px`;
-            idolOverlay.style.top = `${state.y}px`;
-        });
+    async function updateSwitchButton() {
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const cameras = devices.filter(d => d.kind === 'videoinput');
+            switchCamBtn.hidden = cameras.length < 2;
+        } catch {
+            switchCamBtn.hidden = false;
+        }
     }
 
-    // Switch Camera
     switchCamBtn.addEventListener('click', () => {
         facingMode = facingMode === 'user' ? 'environment' : 'user';
         initCamera();
     });
 
-    // Handle Idol Upload
-    idolUpload.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                idolOverlay.src = e.target.result;
-                idolOverlay.onload = () => initOverlay();
-            };
-            reader.readAsDataURL(file);
+    retryBtn.addEventListener('click', initCamera);
+
+    // Release the camera while the page is in the background
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            stopCamera();
+        } else if (preview.hidden) {
+            initCamera();
         }
     });
 
-    // Handle Size Slider
-    sizeSlider.addEventListener('input', (e) => {
-        const val = e.target.value; // 10 to 200
-        state.scale = val / 100;
-        idolOverlay.style.height = `${state.scale * 100}%`;
+    // ---------- Idol overlay ----------
+
+    function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+    }
+
+    // Overlay rectangle in viewport CSS pixels
+    function overlayRect() {
+        const vw = viewport.clientWidth;
+        const vh = viewport.clientHeight;
+        const height = overlay.scale * vh;
+        const width = height * overlay.aspect;
+        return {
+            left: overlay.cx * vw - width / 2,
+            top: overlay.cy * vh - height / 2,
+            width,
+            height
+        };
+    }
+
+    function renderOverlay() {
+        const rect = overlayRect();
+        idolOverlay.style.left = `${rect.left}px`;
+        idolOverlay.style.top = `${rect.top}px`;
+        idolOverlay.style.width = `${rect.width}px`;
+        idolOverlay.style.height = `${rect.height}px`;
+    }
+
+    function setScale(scale) {
+        overlay.scale = clamp(scale, MIN_SCALE, MAX_SCALE);
+        sizeSlider.value = Math.round(overlay.scale * 100);
+        renderOverlay();
+    }
+
+    idolUpload.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        if (idolObjectUrl) URL.revokeObjectURL(idolObjectUrl);
+        idolObjectUrl = URL.createObjectURL(file);
+        idolOverlay.src = idolObjectUrl;
+        // Allow choosing the same file again later
+        idolUpload.value = '';
     });
 
-    // Drag Logic
-    function handleStart(clientX, clientY) {
-        state.isDragging = true;
-        state.dragStartX = clientX;
-        state.dragStartY = clientY;
-        state.initialLeft = idolOverlay.offsetLeft;
-        state.initialTop = idolOverlay.offsetTop;
-        idolOverlay.style.cursor = 'grabbing';
+    idolOverlay.addEventListener('load', () => {
+        overlay.aspect = idolOverlay.naturalWidth / idolOverlay.naturalHeight;
+
+        // Place the idol at the bottom right, fully inside the viewport
+        const vw = viewport.clientWidth;
+        const vh = viewport.clientHeight;
+        const width = overlay.scale * vh * overlay.aspect;
+        overlay.cx = clamp(1 - width / 2 / vw, 0, 1);
+        overlay.cy = clamp(1 - overlay.scale / 2, 0, 1);
+
+        idolOverlay.hidden = false;
+        hint.hidden = true;
+        sizeSlider.disabled = false;
+        renderOverlay();
+    });
+
+    idolOverlay.addEventListener('error', () => {
+        showStatus('That file could not be loaded as an image. Try a PNG or JPG.');
+        setTimeout(() => { if (currentStream) hideStatus(); }, 3000);
+    });
+
+    sizeSlider.addEventListener('input', () => {
+        setScale(sizeSlider.value / 100);
+    });
+
+    // Drag with one pointer, pinch with two
+    function startGesture() {
+        const pts = [...pointers.values()];
+        gesture = {
+            cx: overlay.cx,
+            cy: overlay.cy,
+            scale: overlay.scale,
+            startX: pts.reduce((s, p) => s + p.x, 0) / pts.length,
+            startY: pts.reduce((s, p) => s + p.y, 0) / pts.length,
+            startDist: pts.length > 1 ? Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) : 0
+        };
     }
 
-    function handleMove(clientX, clientY) {
-        if (!state.isDragging) return;
-
-        const dx = clientX - state.dragStartX;
-        const dy = clientY - state.dragStartY;
-
-        state.x = state.initialLeft + dx;
-        state.y = state.initialTop + dy;
-
-        idolOverlay.style.left = `${state.x}px`;
-        idolOverlay.style.top = `${state.y}px`;
-    }
-
-    function handleEnd() {
-        state.isDragging = false;
-        idolOverlay.style.cursor = 'grab';
-    }
-
-    // Mouse Events
-    idolOverlay.addEventListener('mousedown', e => {
+    // Listen on the viewport so a second pinch finger may land beside the idol
+    viewport.addEventListener('pointerdown', (e) => {
+        if (pointers.size === 0 && e.target !== idolOverlay) return;
         e.preventDefault();
-        handleStart(e.clientX, e.clientY);
+        viewport.setPointerCapture(e.pointerId);
+        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        idolOverlay.classList.add('dragging');
+        startGesture();
     });
-    window.addEventListener('mousemove', e => {
-        handleMove(e.clientX, e.clientY);
+
+    viewport.addEventListener('pointermove', (e) => {
+        if (!pointers.has(e.pointerId)) return;
+        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+        const pts = [...pointers.values()];
+        const x = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+        const y = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+
+        overlay.cx = clamp(gesture.cx + (x - gesture.startX) / viewport.clientWidth, 0, 1);
+        overlay.cy = clamp(gesture.cy + (y - gesture.startY) / viewport.clientHeight, 0, 1);
+
+        if (pts.length > 1 && gesture.startDist > 0) {
+            const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+            setScale(gesture.scale * dist / gesture.startDist);
+        } else {
+            renderOverlay();
+        }
     });
-    window.addEventListener('mouseup', handleEnd);
 
-    // Touch Events
-    idolOverlay.addEventListener('touchstart', e => {
-        e.preventDefault(); // Prevent scrolling
-        const touch = e.touches[0];
-        handleStart(touch.clientX, touch.clientY);
+    function endPointer(e) {
+        if (!pointers.delete(e.pointerId)) return;
+        if (pointers.size > 0) {
+            startGesture();
+        } else {
+            gesture = null;
+            idolOverlay.classList.remove('dragging');
+        }
+    }
+
+    viewport.addEventListener('pointerup', endPointer);
+    viewport.addEventListener('pointercancel', endPointer);
+
+    // Mouse wheel / trackpad resize on desktop
+    idolOverlay.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        setScale(overlay.scale * Math.exp(-e.deltaY * 0.001));
+    }, { passive: false });
+
+    window.addEventListener('resize', () => {
+        if (!idolOverlay.hidden) renderOverlay();
     });
-    window.addEventListener('touchmove', e => {
-        const touch = e.touches[0];
-        handleMove(touch.clientX, touch.clientY);
-    });
-    window.addEventListener('touchend', handleEnd);
 
+    // ---------- Capture ----------
 
-    // Capture Image
-    captureBtn.addEventListener('click', () => {
-        const width = video.videoWidth;
-        const height = video.videoHeight;
+    function capture() {
+        const videoW = video.videoWidth;
+        const videoH = video.videoHeight;
+        if (!currentStream || !videoW || !videoH) return;
 
-        canvas.width = width;
-        canvas.height = height;
+        const vw = viewport.clientWidth;
+        const vh = viewport.clientHeight;
+
+        // Reproduce `object-fit: cover`: crop the video to the visible area
+        const coverScale = Math.max(vw / videoW, vh / videoH);
+        const sw = vw / coverScale;
+        const sh = vh / coverScale;
+        const sx = (videoW - sw) / 2;
+        const sy = (videoH - sh) / 2;
+
+        canvas.width = Math.round(sw);
+        canvas.height = Math.round(sh);
+        // Uniform factor from viewport CSS pixels to canvas pixels
+        const k = canvas.width / vw;
 
         const ctx = canvas.getContext('2d');
 
-        // 1. Draw Video
-        if (facingMode === 'user') {
-            ctx.translate(width, 0);
+        // 1. Draw video, mirrored the same way as the preview
+        if (video.classList.contains('mirrored')) {
+            ctx.translate(canvas.width, 0);
             ctx.scale(-1, 1);
         }
-        ctx.drawImage(video, 0, 0, width, height);
+        ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
         ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-        // 2. Draw Idol Overlay
-        if (idolOverlay.src && idolOverlay.naturalWidth > 0) {
-            // Get relative position and size from DOM
-            const viewportRect = viewport.getBoundingClientRect();
-            const overlayRect = idolOverlay.getBoundingClientRect();
-
-            // Calculate ratios
-            const scaleX = width / viewportRect.width;
-            const scaleY = height / viewportRect.height;
-
-            // Calculate position on canvas
-            // Relative to viewport
-            const relX = overlayRect.left - viewportRect.left;
-            const relY = overlayRect.top - viewportRect.top;
-
-            // Map to canvas coordinates
-            const drawX = relX * scaleX;
-            const drawY = relY * scaleY;
-            const drawW = overlayRect.width * scaleX;
-            const drawH = overlayRect.height * scaleY;
-
-            ctx.drawImage(idolOverlay, drawX, drawY, drawW, drawH);
+        // 2. Draw idol overlay at the same place it appears on screen
+        if (!idolOverlay.hidden && idolOverlay.naturalWidth > 0) {
+            const rect = overlayRect();
+            ctx.filter = `drop-shadow(0 0 ${10 * k}px rgba(0, 0, 0, 0.5))`;
+            ctx.drawImage(idolOverlay, rect.left * k, rect.top * k, rect.width * k, rect.height * k);
+            ctx.filter = 'none';
         }
 
-        // 3. Download
-        const dataUrl = canvas.toDataURL('image/png');
-        const link = document.createElement('a');
-        link.download = `idol-cam-${Date.now()}.png`;
-        link.href = dataUrl;
-        link.click();
+        flash.classList.remove('active');
+        void flash.offsetWidth; // restart the animation
+        flash.classList.add('active');
 
-        // Flash effect
-        const flash = document.createElement('div');
-        flash.style.position = 'fixed';
-        flash.style.top = 0;
-        flash.style.left = 0;
-        flash.style.width = '100%';
-        flash.style.height = '100%';
-        flash.style.backgroundColor = 'white';
-        flash.style.opacity = '1';
-        flash.style.transition = 'opacity 0.5s';
-        flash.style.zIndex = '100';
-        document.body.appendChild(flash);
-        setTimeout(() => {
-            flash.style.opacity = '0';
-            setTimeout(() => flash.remove(), 500);
-        }, 50);
+        canvas.toBlob((blob) => {
+            if (!blob) return;
+            if (lastCapture) URL.revokeObjectURL(lastCapture.url);
+            lastCapture = {
+                blob,
+                url: URL.createObjectURL(blob),
+                filename: `idol-cam-${Date.now()}.png`
+            };
+            previewImg.src = lastCapture.url;
+            shareBtn.hidden = !canShareFile(blob, lastCapture.filename);
+            preview.hidden = false;
+            saveBtn.focus();
+        }, 'image/png');
+    }
+
+    function canShareFile(blob, filename) {
+        if (!navigator.canShare) return false;
+        try {
+            return navigator.canShare({ files: [new File([blob], filename, { type: blob.type })] });
+        } catch {
+            return false;
+        }
+    }
+
+    captureBtn.addEventListener('click', capture);
+
+    document.addEventListener('keydown', (e) => {
+        if (!preview.hidden) {
+            if (e.key === 'Escape') closePreview();
+            return;
+        }
+        if (e.key === ' ' && e.target === document.body) {
+            e.preventDefault();
+            capture();
+        }
     });
+
+    // ---------- Preview ----------
+
+    function closePreview() {
+        preview.hidden = true;
+        captureBtn.focus();
+    }
+
+    saveBtn.addEventListener('click', () => {
+        if (!lastCapture) return;
+        const link = document.createElement('a');
+        link.download = lastCapture.filename;
+        link.href = lastCapture.url;
+        link.click();
+    });
+
+    shareBtn.addEventListener('click', async () => {
+        if (!lastCapture) return;
+        const file = new File([lastCapture.blob], lastCapture.filename, { type: lastCapture.blob.type });
+        try {
+            await navigator.share({ files: [file], title: 'Idol Cam' });
+        } catch (err) {
+            if (err.name !== 'AbortError') console.error('Share failed:', err);
+        }
+    });
+
+    retakeBtn.addEventListener('click', closePreview);
 
     // Start
     initCamera();
