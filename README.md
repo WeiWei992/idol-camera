@@ -17,7 +17,7 @@ A web application that allows you to take photos with your favorite idol!
 4. Tap the capture button (or press <kbd>Space</kbd> on desktop), then **Save** or **Share**.
 
 ## Running Locally
-Camera access requires a secure context, so open the app via `http://localhost/...` (e.g. XAMPP) or HTTPS — not by double-clicking `index.html`.
+Camera access requires a secure context, so open the app via `http://localhost/...` (e.g. XAMPP) or HTTPS — not by double-clicking `index.html`. http://localhost/idol-camera/
 
 ## Deployment
 To use this on a mobile device, this site must be served over HTTPS.
